@@ -1,0 +1,49 @@
+[package]
+name = "tower-http-tracing"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.64.0"
+repository = "https://github.com/DoumanAsh/tower-http-tracing"
+description = "Tracing middleware to span annotated every HTTP request"
+keywords = ["tracing", "http", "tower", "middleware"]
+categories = ["asynchronous", "network-programming", "web-programming"]
+license = "BSL-1.0"
+include = [
+    "src/**",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE"
+]
+
+[dependencies.http]
+version = "1"
+
+[dependencies.tracing]
+version = "0.1"
+default-features = false
+
+[dependencies.tower-service]
+version = "0.3"
+default-features = false
+
+[dependencies.tower-layer]
+version = "0.3"
+default-features = false
+
+[dependencies.uuid]
+version = "1"
+features = ["v4"]
+default-features = false
+
+[dev-dependencies.tracing-test]
+version = "0.2"
+default-features = false
+
+[dev-dependencies.tokio]
+version = "1"
+default-features = false
+features = ["macros", "rt"]
+
+[dev-dependencies.tower]
+version = "0.5"
+features = ["util"]
