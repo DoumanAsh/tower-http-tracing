@@ -1,8 +1,8 @@
 [package]
 name = "tower-http-tracing"
 version = "0.1.0"
-edition = "2021"
-rust-version = "1.64.0"
+edition = "2024"
+rust-version = "1.85.0"
 repository = "https://github.com/DoumanAsh/tower-http-tracing"
 description = "Tracing middleware to span annotated every HTTP request"
 keywords = ["tracing", "http", "tower", "middleware"]
