@@ -178,16 +178,21 @@ impl fmt::Display for RequestId {
 ///## Span fields
 ///
 ///Following fields are declared when span is created:
-///- `http.method`
-///- `http.url`
+///- `http.request.method`
+///- `url.path`
+///- `url.query`
+///- `url.scheme`
 ///- `http.request_id` - Inherited from request 'X-Request-Id' or random uuid
-///- `http.user_agent` - Only populated if user agent header is present
-///- `http.version`
+///- `user_agent.original` - Only populated if user agent header is present
 ///- `http.headers` - Optional. Populated if more than 1 header specified via layer [config](struct.HttpRequestLayer.html#method.with_inspect_headers)
-///- `protocol` - Either `http` or `grpc` depending on `content-type`
-///- `http.client.ip` - Optionally added if IP extractor is specified via layer [config](struct.HttpRequestLayer.html#method.with_extract_client_ip)
-///- `http.status_code` - Semantics of this code depends on `protocol`
+///- `network.protocol.name` - Either `http` or `grpc` depending on `content-type`
+///- `network.protocol.version` - Set to HTTP version in case of plain `http` protocol.
+///- `client.address` - Optionally added if IP extractor is specified via layer [config](struct.HttpRequestLayer.html#method.with_extract_client_ip)
+///- `http.response.status_code` - Semantics of this code depends on `protocol`
+///- `error.type` - Populated with `core::any::type_name` value of error type used by the service.
 ///- `error.message` - Populated with `Display` content of the error, returned by underlying service, after processing request.
+///
+///Loosely follows <https://opentelemetry.io/docs/specs/semconv/http/http-spans/#http-server>
 ///
 ///## Usage
 ///
@@ -199,7 +204,7 @@ impl fmt::Display for RequestId {
 ///make_request_spanner!(make_my_service_request_span("my_request", tracing::Level::INFO, service_name = "<your name>"));
 ///
 ///let span = make_my_request_span();
-///span.record("http.url", "I can override span field");
+///span.record("url.path", "I can override span field");
 ///
 ///```
 macro_rules! make_request_spanner {
@@ -215,17 +220,19 @@ macro_rules! make_request_spanner {
                 $level,
                 $name,
                 //Assigned on creation of span
-                http.method = field::Empty,
-                http.url = field::Empty,
+                http.request.method = field::Empty,
+                url.path = field::Empty,
+                url.query = field::Empty,
+                url.scheme = field::Empty,
                 http.request_id = field::Empty,
-                http.user_agent = field::Empty,
-                http.version = field::Empty,
+                user_agent.original = field::Empty,
                 http.headers = field::Empty,
-                protocol = field::Empty,
+                network.protocol.name = field::Empty,
+                network.protocol.version = field::Empty,
                 //Optional
-                http.client.ip = field::Empty,
+                client.address = field::Empty,
                 //Assigned after request is complete
-                http.status_code = field::Empty,
+                http.response.status_code = field::Empty,
                 error.message = field::Empty,
                 $(
                     $fields
@@ -275,20 +282,36 @@ impl RequestSpan {
         };
 
         if let Some(user_agent) = parts.headers.get(http::header::USER_AGENT).and_then(|header| header.to_str().ok()) {
-            span.record("http.user_agent", user_agent);
+            span.record("user_agent.original", user_agent);
         }
-        span.record("http.method", parts.method.as_str());
-        span.record("http.version", tracing::field::debug(&parts.version));
-        span.record("http.url", parts.uri.path());
+        span.record("http.request.method", parts.method.as_str());
+        span.record("url.path", parts.uri.path());
+        if let Some(query) = parts.uri.query() {
+            span.record("url.query", query);
+        }
+        if let Some(scheme) = parts.uri.scheme() {
+            span.record("url.scheme", scheme.as_str());
+        }
         if let Some(request_id) = request_id.as_str() {
             span.record("http.request_id", &request_id);
         } else {
             span.record("http.request_id", request_id.as_bytes());
         }
         if let Some(client_ip) = client_ip {
-            span.record("http.client.ip", tracing::field::display(client_ip));
+            span.record("client.address", tracing::field::display(client_ip));
         }
-        span.record("protocol", protocol.as_str());
+        span.record("network.protocol.name", protocol.as_str());
+        if let Protocol::Http = protocol {
+            match parts.version {
+                http::Version::HTTP_09 => span.record("network.protocol.version", 0.9),
+                http::Version::HTTP_10 => span.record("network.protocol.version", 1.0),
+                http::Version::HTTP_11 => span.record("network.protocol.version", 1.1),
+                http::Version::HTTP_2 => span.record("network.protocol.version", 2),
+                http::Version::HTTP_3 => span.record("network.protocol.version", 3),
+                //Invalid version so just set 0
+                _ => span.record("network.protocol.version", 0),
+            };
+        }
 
         drop(_entered);
 
@@ -428,7 +451,7 @@ impl<ResBody, E: std::error::Error, F: Future<Output = Result<http::Response<Res
                         None => 2,
                     }
                 };
-                span.record("http.status_code", status);
+                span.record("http.response.status_code", status);
 
                 task::Poll::Ready(Ok(resp))
             }
@@ -437,7 +460,8 @@ impl<ResBody, E: std::error::Error, F: Future<Output = Result<http::Response<Res
                     Protocol::Http => 500u16,
                     Protocol::Grpc => 13,
                 };
-                span.record("http.status_code", status);
+                span.record("http.response.status_code", status);
+                span.record("error.type", core::any::type_name::<E>());
                 span.record("error.message", tracing::field::display(&error));
                 task::Poll::Ready(Err(error))
             },
