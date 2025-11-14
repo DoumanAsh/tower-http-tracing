@@ -1,5 +1,9 @@
 //!Tower tracing middleware to annotate every HTTP request with tracing's span.
 //!
+//!## Span creation
+//!
+//!Use [macro](macro.make_request_spanner.html) to declare function that creates desirable span
+//!
 //!## Example
 //!
 //!Below is illustration of how to initialize request layer for passing into your service
@@ -72,8 +76,8 @@ impl Protocol {
     ///Returns textual representation of the `self`
     pub const fn as_str(&self) -> &'static str {
         match self {
-            Self::Grpc => "Grpc",
-            Self::Http => "Http"
+            Self::Grpc => "grpc",
+            Self::Http => "http"
         }
     }
 }
@@ -170,6 +174,20 @@ impl fmt::Display for RequestId {
 
 #[macro_export]
 ///Declares `fn` function compatible with `MakeSpan` using provided parameters
+///
+///## Span fields
+///
+///Following fields are declared when span is created:
+///- `http.method`
+///- `http.url`
+///- `http.request_id` - Inherited from request 'X-Request-Id' or random uuid
+///- `http.user_agent` - Only populated if user agent header is present
+///- `http.version`
+///- `http.headers` - Optional. Populated if more than 1 header specified via layer [config](struct.HttpRequestLayer.html#method.with_inspect_headers)
+///- `protocol` - Either `http` or `grpc` depending on `content-type`
+///- `http.client.ip` - Optionally added if IP extractor is specified via layer [config](struct.HttpRequestLayer.html#method.with_extract_client_ip)
+///- `http.status_code` - Semantics of this code depends on `protocol`
+///- `error.message` - Populated with `Display` content of the error, returned by underlying service, after processing request.
 ///
 ///## Usage
 ///

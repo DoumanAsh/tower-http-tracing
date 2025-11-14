@@ -26,7 +26,7 @@ fn should_generate_grpc_info() {
     tracing::info!("LOG");
     drop(_guard);
 
-    let expected_span = r#"should_generate_grpc_info:request{http.method="GET" http.version=HTTP/1.1 http.url="/grpc.heatlh.v1.Health/Check" http.request_id="request-ID" http.client.ip=127.0.0.1 protocol="Grpc"}"#;
+    let expected_span = r#"should_generate_grpc_info:request{http.method="GET" http.version=HTTP/1.1 http.url="/grpc.heatlh.v1.Health/Check" http.request_id="request-ID" http.client.ip=127.0.0.1 protocol="grpc"}"#;
     assert!(logs_contain(expected_span));
 }
 
@@ -47,7 +47,7 @@ fn should_generate_http_info() {
     tracing::info!("LOG");
     drop(_guard);
 
-    let expected_span = r#"should_generate_http_info:request{http.method="GET" http.version=HTTP/1.1 http.url="/index.html" http.request_id="request-ID" http.client.ip=127.0.0.1 protocol="Http"}"#;
+    let expected_span = r#"should_generate_http_info:request{http.method="GET" http.version=HTTP/1.1 http.url="/index.html" http.request_id="request-ID" http.client.ip=127.0.0.1 protocol="http"}"#;
     assert!(logs_contain(expected_span));
 }
 
