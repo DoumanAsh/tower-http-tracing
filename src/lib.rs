@@ -405,7 +405,11 @@ impl<ResBody, E: std::error::Error, F: Future<Output = Result<http::Response<Res
                 task::Poll::Ready(Ok(resp))
             }
             task::Poll::Ready(Err(error)) => {
-                span.record("http.status_code", 500u16);
+                let status = match protocol {
+                    Protocol::Http => 500u16,
+                    Protocol::Grpc => 13,
+                };
+                span.record("http.status_code", status);
                 span.record("error.message", tracing::field::display(&error));
                 task::Poll::Ready(Err(error))
             },
