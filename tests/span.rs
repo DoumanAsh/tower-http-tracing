@@ -4,6 +4,7 @@ use std::net::IpAddr;
 use tower::{ServiceBuilder, ServiceExt};
 
 make_request_spanner!(my_span("request", tracing::Level::INFO));
+make_request_spanner!(my_span_with_custom_field("request", tracing::Level::INFO, service_name = "EXTRA", test = tracing::field::Empty));
 
 fn default_client_ip(_: &http::request::Parts) -> Option<IpAddr> {
     "127.0.0.1".parse().ok()
@@ -27,6 +28,27 @@ fn should_generate_grpc_info() {
     drop(_guard);
 
     let expected_span = r#"should_generate_grpc_info:request{http.method="GET" http.version=HTTP/1.1 http.url="/grpc.heatlh.v1.Health/Check" http.request_id="request-ID" http.client.ip=127.0.0.1 protocol="grpc"}"#;
+    assert!(logs_contain(expected_span));
+}
+
+#[test]
+#[tracing_test::traced_test]
+fn should_generate_grpc_info_with_extra() {
+    let mut req = http::Request::new(());
+    req.headers_mut().insert(http::header::CONTENT_TYPE, http::header::HeaderValue::from_static("application/grpc"));
+    req.headers_mut().insert(tower_http_tracing::REQUEST_ID, http::HeaderValue::from_static("request-ID"));
+    *req.uri_mut() = http::Uri::from_static("grpc://localhost/grpc.heatlh.v1.Health/Check");
+    let (parts, ()) = req.into_parts();
+
+    let span = my_span_with_custom_field();
+    let span = RequestSpan::new(span, default_client_ip, &parts);
+    assert_eq!(span.info.protocol, Protocol::Grpc);
+
+    let _guard = span.span.enter();
+    tracing::info!("LOG");
+    drop(_guard);
+
+    let expected_span = r#"should_generate_grpc_info_with_extra:request{service_name="EXTRA" http.method="GET" http.version=HTTP/1.1 http.url="/grpc.heatlh.v1.Health/Check" http.request_id="request-ID" http.client.ip=127.0.0.1 protocol="grpc"}"#;
     assert!(logs_contain(expected_span));
 }
 

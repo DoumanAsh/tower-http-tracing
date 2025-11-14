@@ -195,15 +195,22 @@ impl fmt::Display for RequestId {
 ///use tower_http_tracing::make_request_spanner;
 ///
 ///make_request_spanner!(make_my_request_span("my_request", tracing::Level::INFO));
+/////Customize span with extra fields. You can use tracing::field::Empty if you want to omit value
+///make_request_spanner!(make_my_service_request_span("my_request", tracing::Level::INFO, service_name = "<your name>"));
 ///
 ///let span = make_my_request_span();
 ///span.record("http.url", "I can override span field");
+///
 ///```
 macro_rules! make_request_spanner {
     ($fn:ident($name:literal, $level:expr)) => {
+        $crate::make_request_spanner!($fn($name, $level,));
+    };
+    ($fn:ident($name:literal, $level:expr, $($fields:tt)*)) => {
         #[track_caller]
         pub fn $fn() -> $crate::tracing::Span {
             use $crate::tracing::field;
+
             $crate::tracing::span!(
                 $level,
                 $name,
@@ -220,6 +227,9 @@ macro_rules! make_request_spanner {
                 //Assigned after request is complete
                 http.status_code = field::Empty,
                 error.message = field::Empty,
+                $(
+                    $fields
+                )*
             )
         }
     };
