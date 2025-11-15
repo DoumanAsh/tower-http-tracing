@@ -241,6 +241,7 @@ macro_rules! make_request_spanner {
                 client.address = field::Empty,
                 //Assigned after request is complete
                 http.response.status_code = field::Empty,
+                error.type = field::Empty,
                 error.message = field::Empty,
                 $(
                     $fields
