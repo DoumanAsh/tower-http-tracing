@@ -225,6 +225,8 @@ macro_rules! make_request_spanner {
             $crate::tracing::span!(
                 $level,
                 $name,
+                //Defaults
+                span.kind = "server",
                 //Assigned on creation of span
                 http.request.method = field::Empty,
                 url.path = field::Empty,
