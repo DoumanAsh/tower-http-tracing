@@ -70,3 +70,6 @@ features = ["util"]
 default = []
 # Enables opentelemetry context
 opentelemetry = ["dep:opentelemetry", "opentelemetry_sdk", "tracing-opentelemetry"]
+
+[package.metadata.docs.rs]
+features = ["opentelemetry"]
