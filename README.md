@@ -27,3 +27,6 @@ let layer = HttpRequestLayer::new(make_my_request_span).with_extract_client_ip(e
 //Use above layer in your service
 ```
 
+## Features
+
+- `opentelemetry` - Enables integration with opentelemetry to propagate context from requests and into responses

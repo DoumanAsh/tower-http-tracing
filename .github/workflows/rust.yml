@@ -21,3 +21,5 @@ jobs:
     uses: DoumanAsh/douman-ci/.github/workflows/rust.yml@master
     with:
       min-rustc-version: "1.85.0"
+      cargo-features: "opentelemetry"
+      cargo-no-features: true

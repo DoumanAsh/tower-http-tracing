@@ -24,12 +24,18 @@
 //!                                                       .with_inspect_headers(&[&http::header::FORWARDED]);
 //!//Use above layer in your service
 //!```
+//!
+//!## Features
+//!
+//!- `opentelemetry` - Enables integration with opentelemetry to propagate context from requests and into responses
 
 #![warn(missing_docs)]
 #![allow(clippy::style)]
 
 mod grpc;
 mod headers;
+#[cfg(feature = "opentelemetry")]
+pub mod opentelemetry;
 
 use std::net::IpAddr;
 use core::{cmp, fmt, ptr, task};
@@ -394,17 +400,21 @@ impl<ReqBody, ResBody, S: tower_service::Service<http::Request<ReqBody>, Respons
         let (parts, body) = req.into_parts();
         let RequestSpan { span, info } = RequestSpan::new((self.layer.make_span)(), self.layer.extract_client_ip, &parts);
 
+        let mut req = http::Request::from_parts(parts, body);
+        #[cfg(feature = "opentelemetry")]
+        opentelemetry::on_request(&span, &req);
+
         let _entered = span.enter();
         if !self.layer.inspect_headers.is_empty() {
             span.record("http.headers", tracing::field::debug(headers::InspectHeaders {
                 header_list: self.layer.inspect_headers,
-                headers: &parts.headers
+                headers: req.headers()
             }));
         }
         let request_id = info.request_id.clone();
         let protocol = info.protocol;
-        let mut req = http::Request::from_parts(parts, body);
         req.extensions_mut().insert(info);
+
         let inner = self.inner.call(req);
 
         drop(_entered);
@@ -453,6 +463,9 @@ impl<ResBody, E: std::error::Error, F: Future<Output = Result<http::Response<Res
                 };
                 span.record("http.response.status_code", status);
 
+                #[cfg(feature = "opentelemetry")]
+                opentelemetry::on_response_ok(&span, &mut resp);
+
                 task::Poll::Ready(Ok(resp))
             }
             task::Poll::Ready(Err(error)) => {
@@ -463,6 +476,10 @@ impl<ResBody, E: std::error::Error, F: Future<Output = Result<http::Response<Res
                 span.record("http.response.status_code", status);
                 span.record("error.type", core::any::type_name::<E>());
                 span.record("error.message", tracing::field::display(&error));
+
+                #[cfg(feature = "opentelemetry")]
+                opentelemetry::on_response_error(&span, &error);
+
                 task::Poll::Ready(Err(error))
             },
             task::Poll::Pending => task::Poll::Pending
