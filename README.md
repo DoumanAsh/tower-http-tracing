@@ -13,20 +13,27 @@ Below is illustration of how to initialize request layer for passing into your s
 ```rust
 use std::net::IpAddr;
 
-use tower_http_tracing::HttpRequestLayer;
+use tower_http_tracing::{http, HttpRequestLayer};
 
-//Logic to extract client ip has to be written by user
-//You can use utilities in separate crate to design this logic:
-//https://docs.rs/http-ip/latest/http_ip/
-fn extract_client_ip(_parts: &http::request::Parts) -> Option<IpAddr> {
-    None
+#[derive(Clone)]
+pub struct MyContext;
+
+impl tower_http_tracing::LayerContext for MyContext {
+    const INSPECT_HEADERS: &'static [&'static http::HeaderName] = &[&http::header::FORWARDED];
+
+    //Logic to extract client ip has to be written by user
+    //You can use utilities in separate crate to design this logic:
+    //https://docs.rs/http-ip/latest/http_ip/
+    fn extract_client_ip(&self, span: &tracing::Span, parts: &http::request::Parts) -> Option<IpAddr> {
+        None
+    }
 }
 tower_http_tracing::make_request_spanner!(make_my_request_span("my_request", tracing::Level::INFO));
-let layer = HttpRequestLayer::new(make_my_request_span).with_extract_client_ip(extract_client_ip)
-                                                       .with_inspect_headers(&[&http::header::FORWARDED]);
+let layer = HttpRequestLayer::new(make_my_request_span, MyContext);
 //Use above layer in your service
 ```
 
 ## Features
 
 - `opentelemetry` - Enables integration with opentelemetry to propagate context from requests and into responses
+- `datadog` - Enables integration with specialized datadog tracing layer to propagate context from requests and into responses

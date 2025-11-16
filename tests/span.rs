@@ -1,4 +1,4 @@
-use tower_http_tracing::{make_request_spanner, RequestSpan, Protocol, HttpRequestLayer};
+use tower_http_tracing::{make_request_spanner, RequestSpan, Protocol, HttpRequestLayer, LayerContext};
 
 use std::net::IpAddr;
 use tower::{ServiceBuilder, ServiceExt};
@@ -6,8 +6,15 @@ use tower::{ServiceBuilder, ServiceExt};
 make_request_spanner!(my_span("request", tracing::Level::INFO));
 make_request_spanner!(my_span_with_custom_field("request", tracing::Level::INFO, service_name = "EXTRA", test = tracing::field::Empty));
 
-fn default_client_ip(_: &http::request::Parts) -> Option<IpAddr> {
-    "127.0.0.1".parse().ok()
+#[derive(Copy, Clone)]
+struct TestContext;
+
+impl LayerContext for TestContext {
+    const INSPECT_HEADERS: &'static [&'static http::HeaderName] = &[];
+
+    fn extract_client_ip(&self, _: &tracing::Span, _: &http::request::Parts) -> Option<IpAddr> {
+        "127.0.0.1".parse().ok()
+    }
 }
 
 #[test]
@@ -20,7 +27,7 @@ fn should_generate_grpc_info() {
     let (parts, ()) = req.into_parts();
 
     let span = my_span();
-    let span = RequestSpan::new(span, default_client_ip, &parts);
+    let span = RequestSpan::new(&TestContext, span, &parts);
     assert_eq!(span.info.protocol, Protocol::Grpc);
 
     let _guard = span.span.enter();
@@ -41,7 +48,7 @@ fn should_generate_grpc_info_with_extra() {
     let (parts, ()) = req.into_parts();
 
     let span = my_span_with_custom_field();
-    let span = RequestSpan::new(span, default_client_ip, &parts);
+    let span = RequestSpan::new(&TestContext, span, &parts);
     assert_eq!(span.info.protocol, Protocol::Grpc);
 
     let _guard = span.span.enter();
@@ -62,7 +69,7 @@ fn should_generate_http_info() {
     let (parts, ()) = req.into_parts();
 
     let span = my_span();
-    let span = RequestSpan::new(span, default_client_ip, &parts);
+    let span = RequestSpan::new(&TestContext, span, &parts);
     assert_eq!(span.info.protocol, Protocol::Http);
 
     let _guard = span.span.enter();
@@ -76,7 +83,7 @@ fn should_generate_http_info() {
 #[tokio::test]
 async fn should_complete_successful_request_span() {
     const REQUEST_ID_VALUE: &str = "successful-id";
-    let layer = HttpRequestLayer::new(my_span);
+    let layer = HttpRequestLayer::new(my_span, TestContext);
     let service = ServiceBuilder::new().layer(layer).service_fn(|_: http::Request<()>| async move {
         Ok::<_, core::convert::Infallible>(http::Response::new(()))
     });

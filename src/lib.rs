@@ -11,27 +11,35 @@
 //!```rust
 //!use std::net::IpAddr;
 //!
-//!use tower_http_tracing::HttpRequestLayer;
+//!use tower_http_tracing::{http, HttpRequestLayer};
 //!
-//!//Logic to extract client ip has to be written by user
-//!//You can use utilities in separate crate to design this logic:
-//!//https://docs.rs/http-ip/latest/http_ip/
-//!fn extract_client_ip(_parts: &http::request::Parts) -> Option<IpAddr> {
-//!    None
+//!#[derive(Clone)]
+//!pub struct MyContext;
+//!
+//!impl tower_http_tracing::LayerContext for MyContext {
+//!    const INSPECT_HEADERS: &'static [&'static http::HeaderName] = &[&http::header::FORWARDED];
+//!
+//!    //Logic to extract client ip has to be written by user
+//!    //You can use utilities in separate crate to design this logic:
+//!    //https://docs.rs/http-ip/latest/http_ip/
+//!    fn extract_client_ip(&self, span: &tracing::Span, parts: &http::request::Parts) -> Option<IpAddr> {
+//!        None
+//!    }
 //!}
 //!tower_http_tracing::make_request_spanner!(make_my_request_span("my_request", tracing::Level::INFO));
-//!let layer = HttpRequestLayer::new(make_my_request_span).with_extract_client_ip(extract_client_ip)
-//!                                                       .with_inspect_headers(&[&http::header::FORWARDED]);
+//!let layer = HttpRequestLayer::new(make_my_request_span, MyContext);
 //!//Use above layer in your service
 //!```
 //!
 //!## Features
 //!
 //!- `opentelemetry` - Enables integration with opentelemetry to propagate context from requests and into responses
+//!- `datadog` - Enables integration with specialized datadog tracing layer to propagate context from requests and into responses
 
 #![warn(missing_docs)]
 #![allow(clippy::style)]
 
+pub use http;
 mod grpc;
 mod headers;
 #[cfg(feature = "opentelemetry")]
@@ -50,13 +58,6 @@ pub use tracing;
 pub const REQUEST_ID: http::HeaderName = http::HeaderName::from_static("x-request-id");
 ///Alias to function signature required to create span
 pub type MakeSpan = fn() -> tracing::Span;
-///ALias to function signature to extract client's ip from request
-pub type ExtractClientIp = fn(&http::request::Parts) -> Option<IpAddr>;
-
-#[inline]
-fn default_client_ip(_: &http::request::Parts) -> Option<IpAddr> {
-    None
-}
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 ///Possible request protocol
@@ -202,6 +203,12 @@ impl fmt::Display for RequestId {
 ///
 ///Loosely follows <https://opentelemetry.io/docs/specs/semconv/http/http-spans/#http-server>
 ///
+///## Additional fields
+///
+///Additional fields can be declared by passing extra arguments after `level` in the same way as you would pass it to `tracing::span!` macro
+///
+///Note that you need to use `tracing::field::Empty` if you want to add value later
+///
 ///## Usage
 ///
 ///```
@@ -278,10 +285,10 @@ pub struct RequestSpan {
 
 impl RequestSpan {
     ///Creates new request span
-    pub fn new(span: tracing::Span, extract_client_ip: ExtractClientIp, parts: &http::request::Parts) -> Self {
+    pub fn new(context: &impl LayerContext, span: tracing::Span, parts: &http::request::Parts) -> Self {
         let _entered = span.enter();
 
-        let client_ip = (extract_client_ip)(parts);
+        let client_ip = context.extract_client_ip(&span, parts);
         let protocol = parts.headers
                             .get(http::header::CONTENT_TYPE)
                             .map_or(Protocol::Http, |content_type| Protocol::from_content_type(content_type.as_bytes()));
@@ -337,45 +344,140 @@ impl RequestSpan {
     }
 }
 
+///[HttpRequestLayer](struct.HttpRequestLayer.html) context interface
+pub trait LayerContext: Clone + Send + Sync {
+    ///Specifies list of headers you want to inspect via `http.headers` attribute
+    const INSPECT_HEADERS: &'static [&'static http::HeaderName];
+
+    #[allow(unused)]
+    #[inline(always)]
+    ///Defines way to extract `IpAddr` from `parts`
+    ///
+    ///Defaults to always return `None`
+    fn extract_client_ip(&self, span: &tracing::Span, parts: &http::request::Parts) -> Option<IpAddr> {
+        None
+    }
+
+    #[allow(unused)]
+    #[inline(always)]
+    ///Callback to be called on incoming request
+    ///
+    ///Defaults to be noop
+    fn on_request<T>(&self, span: &tracing::Span, request: &http::Request<T>) {
+    }
+
+    #[allow(unused)]
+    #[inline(always)]
+    ///Callback to be called when successful response is returned
+    ///
+    ///Defaults to be noop
+    fn on_response_ok<T>(&self, span: &tracing::Span, response: &mut http::Response<T>) {
+    }
+
+    #[allow(unused)]
+    #[inline(always)]
+    ///Callback to be called when error is returned instead of response
+    ///
+    ///Defaults to be noop
+    fn on_response_error(&self, span: &tracing::Span, error: &impl std::error::Error) {
+    }
+}
+
+#[derive(Copy, Clone)]
+///Default context that does nothing by default
+pub struct Noop;
+impl LayerContext for Noop {
+    const INSPECT_HEADERS: &'static [&'static http::HeaderName] = &[];
+}
+
+impl<I: LayerContext> LayerContext for Box<I> {
+    const INSPECT_HEADERS: &'static [&'static http::HeaderName] = I::INSPECT_HEADERS;
+
+    #[inline(always)]
+    fn on_request<T>(&self, span: &tracing::Span, request: &http::Request<T>) {
+        I::on_request(self, span, request)
+    }
+
+    #[inline(always)]
+    fn on_response_ok<T>(&self, span: &tracing::Span, response: &mut http::Response<T>) {
+        I::on_response_ok(self, span, response)
+    }
+
+    #[inline(always)]
+    fn on_response_error(&self, span: &tracing::Span, error: &impl std::error::Error) {
+        I::on_response_error(self, span, error)
+    }
+
+    #[inline(always)]
+    fn extract_client_ip(&self, span: &tracing::Span, parts: &http::request::Parts) -> Option<IpAddr> {
+        I::extract_client_ip(self, span, parts)
+    }
+}
+
+impl<I: LayerContext> LayerContext for std::sync::Arc<I> {
+    const INSPECT_HEADERS: &'static [&'static http::HeaderName] = I::INSPECT_HEADERS;
+
+    #[inline(always)]
+    fn on_request<T>(&self, span: &tracing::Span, request: &http::Request<T>) {
+        I::on_request(self, span, request)
+    }
+
+    #[inline(always)]
+    fn on_response_ok<T>(&self, span: &tracing::Span, response: &mut http::Response<T>) {
+        I::on_response_ok(self, span, response)
+    }
+
+    #[inline(always)]
+    fn on_response_error(&self, span: &tracing::Span, error: &impl std::error::Error) {
+        I::on_response_error(self, span, error)
+    }
+
+    #[inline(always)]
+    fn extract_client_ip(&self, span: &tracing::Span, parts: &http::request::Parts) -> Option<IpAddr> {
+        I::extract_client_ip(self, span, parts)
+    }
+}
+
 #[derive(Clone)]
 ///Tower layer
-pub struct HttpRequestLayer {
+pub struct HttpRequestLayer<C: LayerContext = Noop> {
     make_span: MakeSpan,
-    inspect_headers: &'static [&'static http::HeaderName],
-    extract_client_ip: ExtractClientIp,
+    context: C,
 }
 
 impl HttpRequestLayer {
     #[inline]
-    ///Creates new layer with provided span maker
-    pub fn new(make_span: MakeSpan) -> Self {
+    ///Creates new layer with noop context.
+    pub fn new_simple(make_span: MakeSpan) -> Self {
         Self {
             make_span,
-            inspect_headers: &[],
-            extract_client_ip: default_client_ip
+            context: Noop
+        }
+    }
+}
+
+impl<C: LayerContext> HttpRequestLayer<C> {
+    #[inline]
+    ///Creates new layer with provided span maker
+    pub fn new(make_span: MakeSpan, context: C) -> Self {
+        Self {
+            make_span,
+            context,
         }
     }
 
     #[inline]
-    ///Specifies list of headers you want to inspect via `http.headers` attribute.
-    ///
-    ///By default none of the headers are inspected
-    pub fn with_inspect_headers(mut self, inspect_headers: &'static [&'static http::HeaderName]) -> Self {
-        self.inspect_headers = inspect_headers;
-        self
-    }
-
-    ///Customizes client ip extraction method
-    ///
-    ///Default extracts none
-    pub fn with_extract_client_ip(mut self, extract_client_ip: ExtractClientIp) -> Self {
-        self.extract_client_ip = extract_client_ip;
-        self
+    ///Replaces context
+    pub fn with_context<C2: LayerContext>(self, context: C2) -> HttpRequestLayer<C2> {
+        HttpRequestLayer {
+            make_span: self.make_span,
+            context
+        }
     }
 }
 
-impl<S> tower_layer::Layer<S> for HttpRequestLayer {
-    type Service = HttpRequestService<S>;
+impl<S, C: LayerContext> tower_layer::Layer<S> for HttpRequestLayer<C> {
+    type Service = HttpRequestService<S, C>;
     #[inline(always)]
     fn layer(&self, inner: S) -> Self::Service {
         HttpRequestService {
@@ -386,15 +488,15 @@ impl<S> tower_layer::Layer<S> for HttpRequestLayer {
 }
 
 ///Tower service to annotate requests with span
-pub struct HttpRequestService<S> {
-    layer: HttpRequestLayer,
+pub struct HttpRequestService<S, C: LayerContext> {
+    layer: HttpRequestLayer<C>,
     inner: S
 }
 
-impl<ReqBody, ResBody, S: tower_service::Service<http::Request<ReqBody>, Response = http::Response<ResBody>>> tower_service::Service<http::Request<ReqBody>> for HttpRequestService<S> where S::Error: std::error::Error {
+impl<C: LayerContext, ReqBody, ResBody, S: tower_service::Service<http::Request<ReqBody>, Response = http::Response<ResBody>>> tower_service::Service<http::Request<ReqBody>> for HttpRequestService<S, C> where S::Error: std::error::Error {
     type Response = S::Response;
     type Error = S::Error;
-    type Future = ResponseFut<S::Future>;
+    type Future = ResponseFut<S::Future, C>;
 
     #[inline(always)]
     fn poll_ready(&mut self, ctx: &mut task::Context<'_>) -> task::Poll<Result<(), Self::Error>> {
@@ -403,18 +505,19 @@ impl<ReqBody, ResBody, S: tower_service::Service<http::Request<ReqBody>, Respons
 
     fn call(&mut self, req: http::Request<ReqBody>) -> Self::Future {
         let (parts, body) = req.into_parts();
-        let RequestSpan { span, info } = RequestSpan::new((self.layer.make_span)(), self.layer.extract_client_ip, &parts);
+        let RequestSpan { span, info } = RequestSpan::new(&self.layer.context, (self.layer.make_span)(), &parts);
 
         let mut req = http::Request::from_parts(parts, body);
+        self.layer.context.on_request(&span, &req);
         #[cfg(feature = "opentelemetry")]
         opentelemetry::on_request(&span, &req);
         #[cfg(feature = "datadog")]
         datadog::on_request(&span, &req);
 
         let _entered = span.enter();
-        if !self.layer.inspect_headers.is_empty() {
+        if !C::INSPECT_HEADERS.is_empty() {
             span.record("http.headers", tracing::field::debug(headers::InspectHeaders {
-                header_list: self.layer.inspect_headers,
+                header_list: C::INSPECT_HEADERS,
                 headers: req.headers()
             }));
         }
@@ -427,6 +530,7 @@ impl<ReqBody, ResBody, S: tower_service::Service<http::Request<ReqBody>, Respons
         drop(_entered);
         ResponseFut {
             inner,
+            context: self.layer.context.clone(),
             span,
             protocol,
             request_id
@@ -435,21 +539,23 @@ impl<ReqBody, ResBody, S: tower_service::Service<http::Request<ReqBody>, Respons
 }
 
 ///Middleware's response future
-pub struct ResponseFut<F> {
+pub struct ResponseFut<F, C> {
     inner: F,
+    context: C,
     span: tracing::Span,
     protocol: Protocol,
     request_id: RequestId,
 }
 
-impl<ResBody, E: std::error::Error, F: Future<Output = Result<http::Response<ResBody>, E>>> Future for ResponseFut<F> {
+impl<C: LayerContext, ResBody, E: std::error::Error, F: Future<Output = Result<http::Response<ResBody>, E>>> Future for ResponseFut<F, C> {
     type Output = F::Output;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> task::Poll<Self::Output> {
-        let (fut, span, protocol, request_id) = unsafe {
+        let (fut, context, span, protocol, request_id) = unsafe {
             let this = self.get_unchecked_mut();
             (
                 Pin::new_unchecked(&mut this.inner),
+                &this.context,
                 &this.span,
                 this.protocol,
                 &this.request_id,
@@ -470,6 +576,7 @@ impl<ResBody, E: std::error::Error, F: Future<Output = Result<http::Response<Res
                 };
                 span.record("http.response.status_code", status);
 
+                context.on_response_ok(&span, &mut resp);
                 #[cfg(feature = "opentelemetry")]
                 opentelemetry::on_response_ok(&span, &mut resp);
                 #[cfg(feature = "datadog")]
@@ -486,6 +593,7 @@ impl<ResBody, E: std::error::Error, F: Future<Output = Result<http::Response<Res
                 span.record("error.type", core::any::type_name::<E>());
                 span.record("error.message", tracing::field::display(&error));
 
+                context.on_response_error(&span, &error);
                 #[cfg(feature = "opentelemetry")]
                 opentelemetry::on_response_error(&span, &error);
                 #[cfg(feature = "datadog")]
