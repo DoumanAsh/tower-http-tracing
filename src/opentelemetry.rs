@@ -64,7 +64,7 @@ pub fn on_request<T>(span: &tracing::Span, request: &http::Request<T>) {
 }
 
 #[inline(always)]
-///Propagates successful into `span` context and into response's headers
+///Propagates success into `span` context and then export context headers into response
 pub fn on_response_ok<T>(span: &tracing::Span, response: &mut http::Response<T>) {
     use tracing_opentelemetry::OpenTelemetrySpanExt;
 

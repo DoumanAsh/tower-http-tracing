@@ -36,6 +36,8 @@ mod grpc;
 mod headers;
 #[cfg(feature = "opentelemetry")]
 pub mod opentelemetry;
+#[cfg(feature = "datadog")]
+pub mod datadog;
 
 use std::net::IpAddr;
 use core::{cmp, fmt, ptr, task};
@@ -406,6 +408,8 @@ impl<ReqBody, ResBody, S: tower_service::Service<http::Request<ReqBody>, Respons
         let mut req = http::Request::from_parts(parts, body);
         #[cfg(feature = "opentelemetry")]
         opentelemetry::on_request(&span, &req);
+        #[cfg(feature = "datadog")]
+        datadog::on_request(&span, &req);
 
         let _entered = span.enter();
         if !self.layer.inspect_headers.is_empty() {
@@ -468,6 +472,8 @@ impl<ResBody, E: std::error::Error, F: Future<Output = Result<http::Response<Res
 
                 #[cfg(feature = "opentelemetry")]
                 opentelemetry::on_response_ok(&span, &mut resp);
+                #[cfg(feature = "datadog")]
+                datadog::on_response_ok(&span, &mut resp);
 
                 task::Poll::Ready(Ok(resp))
             }
@@ -482,6 +488,8 @@ impl<ResBody, E: std::error::Error, F: Future<Output = Result<http::Response<Res
 
                 #[cfg(feature = "opentelemetry")]
                 opentelemetry::on_response_error(&span, &error);
+                #[cfg(feature = "datadog")]
+                datadog::on_response_error(&span, &error);
 
                 task::Poll::Ready(Err(error))
             },

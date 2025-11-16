@@ -1,6 +1,6 @@
 [package]
 name = "tower-http-tracing"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2024"
 rust-version = "1.85.0"
 repository = "https://github.com/DoumanAsh/tower-http-tracing"
@@ -52,6 +52,13 @@ version = "0.32"
 default-features = false
 optional = true
 
+# Datadog dependencies
+[dependencies.tracing-datadog]
+version = "0.4"
+default-features = false
+features = ["http"]
+optional = true
+
 # Dev dependencies
 [dev-dependencies.tracing-test]
 version = "0.2"
@@ -70,6 +77,8 @@ features = ["util"]
 default = []
 # Enables opentelemetry context
 opentelemetry = ["dep:opentelemetry", "opentelemetry_sdk", "tracing-opentelemetry"]
+# Enables datadog context
+datadog = ["tracing-datadog"]
 
 [package.metadata.docs.rs]
-features = ["opentelemetry"]
+features = ["opentelemetry", "datadog"]
