@@ -38,8 +38,8 @@ impl Strategy<http::HeaderMap> for Propagation {
         use fmt::Write;
 
         let DatadogContext { trace_id, parent_id } = &context;
-        //Make DatadogContext::is_empty() public, also parent_id == 0 is fine?
-        if *trace_id == 0 {
+        //Make DatadogContext::is_empty() public
+        if *trace_id == 0 || *parent_id == 0 {
             return;
         }
         let mut out = BytesWriter(bytes::BytesMut::new());
