@@ -1,7 +1,7 @@
 use tracing_datadog::context::{Strategy, DatadogContext};
 
 #[test]
-fn should_ensure_tracing_context_propagation() {
+fn should_ensure_datadog_context_propagation() {
     let mut headers = http::HeaderMap::new();
 
     let context = DatadogContext {
@@ -21,4 +21,22 @@ fn should_ensure_tracing_context_propagation() {
 
     let header_value = headers.get(tower_http_tracing::datadog::W3C_TRACEPARENT_NAME).map(|value| value.to_str().expect("should be string")).unwrap();
     assert_eq!(header_value, "00-000000000000000fff00011110002222-0333000444000555-01");
+}
+
+#[test]
+fn should_ensure_datadog_trace_not_sampled() {
+    let mut headers = http::HeaderMap::new();
+    headers.insert(tower_http_tracing::datadog::W3C_TRACEPARENT_NAME, "00-000000000000000fff00011110002222-0333000444000555-10".parse().unwrap());
+    let context = tower_http_tracing::datadog::Propagation::extract(&headers);
+    assert_eq!(context.trace_id, 0);
+    assert_eq!(context.parent_id, 0);
+}
+
+#[test]
+fn should_ensure_datadog_context_with_invalid_version_rejected() {
+    let mut headers = http::HeaderMap::new();
+    headers.insert(tower_http_tracing::datadog::W3C_TRACEPARENT_NAME, "01-000000000000000fff00011110002222-0333000444000555-01".parse().unwrap());
+    let context = tower_http_tracing::datadog::Propagation::extract(&headers);
+    assert_eq!(context.trace_id, 0);
+    assert_eq!(context.parent_id, 0);
 }
