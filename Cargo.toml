@@ -1,6 +1,6 @@
 [package]
 name = "tower-http-tracing"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 rust-version = "1.85.0"
 repository = "https://github.com/DoumanAsh/tower-http-tracing"
@@ -57,7 +57,7 @@ optional = true
 
 # Datadog dependencies
 [dependencies.tracing-datadog]
-version = "0.5"
+version = "0.6"
 default-features = false
 optional = true
 
@@ -67,7 +67,7 @@ version = "0.2"
 default-features = false
 
 [dev-dependencies.tokio]
-version = "1"
+version = "1.49"
 default-features = false
 features = ["macros", "rt"]
 
