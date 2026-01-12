@@ -31,6 +31,10 @@
 //!//Use above layer in your service
 //!```
 //!
+//!## Extensions
+//!
+//![RequestInfo] is added to request's extensions map to provide information about request including [RequestId]
+//!
 //!## Features
 //!
 //!- `opentelemetry` - Enables integration with opentelemetry to propagate context from requests and into responses

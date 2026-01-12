@@ -33,6 +33,9 @@ tower_http_tracing::make_request_spanner!(make_my_request_span("my_request", tra
 let layer = HttpRequestLayer::new(make_my_request_span, MyContext);
 //Use above layer in your service
 ```
+## Extensions
+
+`RequestInfo` is added to request's extensions map to provide information about request including `RequestId`
 
 ## Features
 
