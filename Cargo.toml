@@ -1,6 +1,6 @@
 [package]
 name = "tower-http-tracing"
-version = "0.3.2"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.85.0"
 repository = "https://github.com/DoumanAsh/tower-http-tracing"
@@ -41,17 +41,18 @@ default-features = false
 
 # Opentelemetry dependencies
 [dependencies.opentelemetry]
-version = "0.31"
+version = "0.32"
 default-features = false
 optional = true
 
 [dependencies.opentelemetry_sdk]
-version = "0.31"
+version = "0.32"
 default-features = false
 optional = true
+features = ["trace"]
 
 [dependencies.tracing-opentelemetry]
-version = "0.32"
+version = "0.33"
 default-features = false
 optional = true
 
