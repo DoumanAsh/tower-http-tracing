@@ -192,16 +192,20 @@ impl fmt::Display for RequestId {
 ///
 ///Following fields are declared when span is created:
 ///- `http.request.method`
-///- `url.path`
-///- `url.query`
-///- `url.scheme`
+///- `http.route` - Unique route path of the handle. Defaults to `url.path`. Should be overriden if web framework provides capabilities to extract it
+///- `url.path` - Full path within incoming request without query part
+///- `url.query` - Optional query part of the request.
+///- `url.scheme` - Request's scheme. Normally it is http/https or grpc
 ///- `http.request_id` - Inherited from request 'X-Request-Id' or random uuid
 ///- `user_agent.original` - Only populated if user agent header is present
 ///- `http.headers` - Optional. Populated if more than 1 header specified via layer [config](struct.HttpRequestLayer.html#method.with_inspect_headers)
 ///- `network.protocol.name` - Either `http` or `grpc` depending on `content-type`
 ///- `network.protocol.version` - Set to HTTP version in case of plain `http` protocol.
+///- `rpc.system.name` - Sets to `grpc` in case of `grpc` protocol
+///- `rpc.method = Full qualified gRPC method including service name
 ///- `client.address` - Optionally added if IP extractor is specified via layer [config](struct.HttpRequestLayer.html#method.with_extract_client_ip)
 ///- `http.response.status_code` - Semantics of this code depends on `protocol`
+///- `rpc.grpc.status_code` - Grpc status code in case of `grpc` protocol
 ///- `error.type` - Populated with `core::any::type_name` value of error type used by the service.
 ///- `error.message` - Populated with `Display` content of the error, returned by underlying service, after processing request.
 ///
@@ -239,9 +243,10 @@ macro_rules! make_request_spanner {
                 $level,
                 $name,
                 //Defaults
-                span.kind = "server",
+                otel.kind = "server",
                 //Assigned on creation of span
                 http.request.method = field::Empty,
+                http.route = field::Empty,
                 url.path = field::Empty,
                 url.query = field::Empty,
                 url.scheme = field::Empty,
@@ -250,12 +255,18 @@ macro_rules! make_request_spanner {
                 http.headers = field::Empty,
                 network.protocol.name = field::Empty,
                 network.protocol.version = field::Empty,
+                //RPC specific
+                rpc.system.name = field::Empty,
+                rpc.method = field::Empty,
+                rpc.service = field::Empty,
                 //Optional
                 client.address = field::Empty,
                 //Assigned after request is complete
                 http.response.status_code = field::Empty,
                 error.type = field::Empty,
                 error.message = field::Empty,
+                //Optional grpc specific code
+                rpc.grpc.status_code = field::Empty,
                 $(
                     $fields
                 )*
@@ -303,13 +314,28 @@ impl RequestSpan {
             RequestId::from_uuid(uuid::Uuid::new_v4())
         };
 
+        match protocol {
+            Protocol::Http => {
+                //This should not include dynamic parts, but we do not really have uniform access to it, so user might need to manually override it
+                span.record("http.route", parts.uri.path())
+                    .record("http.request.method", parts.method.as_str())
+                    .record("url.path", parts.uri.path());
+                if let Some(query) = parts.uri.query() {
+                    span.record("url.query", query);
+                }
+            },
+            Protocol::Grpc => {
+                let mut path = parts.uri.path();
+                if let Some(stripped_path) = path.strip_prefix('/') {
+                    path = stripped_path
+                }
+
+                span.record("rpc.system.name", "grpc")
+                    .record("rpc.method", path);
+            }
+        }
         if let Some(user_agent) = parts.headers.get(http::header::USER_AGENT).and_then(|header| header.to_str().ok()) {
             span.record("user_agent.original", user_agent);
-        }
-        span.record("http.request.method", parts.method.as_str());
-        span.record("url.path", parts.uri.path());
-        if let Some(query) = parts.uri.query() {
-            span.record("url.query", query);
         }
         if let Some(scheme) = parts.uri.scheme() {
             span.record("url.scheme", scheme.as_str());
@@ -571,14 +597,13 @@ impl<C: LayerContext, ResBody, E: std::error::Error, F: Future<Output = Result<h
                 if let Ok(request_id) = http::HeaderValue::from_bytes(request_id.as_bytes()) {
                     resp.headers_mut().insert(REQUEST_ID, request_id);
                 }
-                let status = match protocol {
-                    Protocol::Http => resp.status().as_u16(),
-                    Protocol::Grpc => match resp.headers().get("grpc-status") {
-                        Some(status) => grpc::parse_grpc_status(status.as_bytes()),
-                        None => 2,
-                    }
-                };
-                span.record("http.response.status_code", status);
+                span.record("http.response.status_code", resp.status().as_u16());
+                if let Protocol::Grpc = protocol {
+                    match resp.headers().get("grpc-status") {
+                        Some(status) => span.record("rpc.grpc.status_code", grpc::parse_grpc_status(status.as_bytes())),
+                        None => span.record("rpc.grpc.status_code", 2u16),
+                    };
+                }
 
                 context.on_response_ok(&span, &mut resp);
                 #[cfg(feature = "opentelemetry")]
@@ -589,11 +614,10 @@ impl<C: LayerContext, ResBody, E: std::error::Error, F: Future<Output = Result<h
                 task::Poll::Ready(Ok(resp))
             }
             task::Poll::Ready(Err(error)) => {
-                let status = match protocol {
-                    Protocol::Http => 500u16,
-                    Protocol::Grpc => 13,
-                };
-                span.record("http.response.status_code", status);
+                span.record("http.response.status_code", 500u16);
+                if let Protocol::Grpc = protocol {
+                    span.record("rpc.grpc.status_code", 13);
+                }
                 span.record("error.type", core::any::type_name::<E>());
                 span.record("error.message", tracing::field::display(&error));
 

@@ -3,7 +3,7 @@
 [![Rust](https://github.com/DoumanAsh/tower-http-tracing/actions/workflows/rust.yml/badge.svg)](https://github.com/DoumanAsh/tower-http-tracing/actions/workflows/rust.yml)
 [![Crates.io](https://img.shields.io/crates/v/tower-http-tracing.svg)](https://crates.io/crates/tower-http-tracing)
 [![Documentation](https://docs.rs/tower-http-tracing/badge.svg)](https://docs.rs/crate/tower-http-tracing/)
-[![dependency status](https://deps.rs/crate/tower-http-tracing/0.4.0/status.svg)](https://deps.rs/crate/tower-http-tracing/0.4.0)
+[![dependency status](https://deps.rs/crate/tower-http-tracing/0.4.1/status.svg)](https://deps.rs/crate/tower-http-tracing/0.4.1)
 
 Tower tracing middleware to annotate every HTTP request with tracing's span
 
