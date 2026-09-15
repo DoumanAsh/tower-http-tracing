@@ -202,7 +202,7 @@ impl fmt::Display for RequestId {
 ///- `network.protocol.name` - Either `http` or `grpc` depending on `content-type`
 ///- `network.protocol.version` - Set to HTTP version in case of plain `http` protocol.
 ///- `rpc.system.name` - Sets to `grpc` in case of `grpc` protocol
-///- `rpc.method = Full qualified gRPC method including service name
+///- `rpc.method` - Full qualified gRPC method including service name
 ///- `client.address` - Optionally added if IP extractor is specified via layer [config](struct.HttpRequestLayer.html#method.with_extract_client_ip)
 ///- `http.response.status_code` - Semantics of this code depends on `protocol`
 ///- `rpc.grpc.status_code` - Grpc status code in case of `grpc` protocol
