@@ -14,7 +14,7 @@ impl fmt::Debug for DisplayHeaderValues<'_> {
             }
 
             for header in headers {
-                fmt.write_str(" ,")?;
+                fmt.write_str(", ")?;
                 match header.to_str() {
                     Ok(header) => fmt.write_str(header)?,
                     Err(_) => fmt.write_str(FALLBACK_STR)?,
